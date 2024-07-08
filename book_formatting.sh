@@ -1,6 +1,6 @@
 #!/bin/bash
 
-process_book() {
+edit_headers() {
     file=$1
     initial_pattern='^.**** START OF THE PROJECT GUTENBERG EBOOK.*$'
     final_pattern='^.**** END OF THE PROJECT GUTENBERG EBOOK.*$'
@@ -12,12 +12,19 @@ process_book() {
 
     sed "1,${header_line}d; ${footer_line},\$d" "$file" > "$temp_file"
     mv "$temp_file" "$file"
+}
 
-    echo "Edited $file "
+edit_non_latin_characters() {
+    file=$1
+
+    temp_file=$(mktemp)
+
+    grep -oP '\([^\)]+\)|\[[^\]]+\]|[\p{Latin}\p{P}\p{Z}0-9]+' "$file" > "$temp_file"
+    mv "$temp_file" "$file"
 }
 
 concatenate_books() {
-    concatenated_file="all_books_concatenated.txt"
+    concatenated_file="complete_books.txt"
     > "$concatenated_file"  
 
     for processed_file in ./books/*; do
@@ -40,7 +47,9 @@ main() {
 
     for book_file in "$books_dir"/*; do
         if [ -f "$book_file" ]; then
-            process_book "$book_file"
+            edit_headers "$book_file"
+            edit_non_latin_characters "$book_file"
+            echo "Edited $book_file"
         fi
     done
 
