@@ -16,7 +16,7 @@ import (
 
 const (
 	BOOKS_DIR     = "./books"
-	BOOK_LIMIT    = 1000
+	BOOK_LIMIT    = 10000
 	NUM_WORKERS   = 3
 	MAX_RETRIES   = 3
 	RETRY_DELAY   = 2 * time.Second
@@ -134,35 +134,10 @@ func fetch_and_save_books(book_id, link string) bool {
 		case <-quit:
 			return false
 		default:
-			time.Sleep(REQUEST_DELAY)
-			resp, err := http.Get(link)
-			if err != nil {
-				fmt.Printf("Error fetching book %s (attempt %d): %v\n", book_id, retry+1, err)
-				time.Sleep(RETRY_DELAY)
-				continue
+			if success := handle_book_request(book_id, link); success {
+				return true
 			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode == http.StatusNotFound {
-				fmt.Printf("Book %s not found (404).\n", book_id)
-				return false
-			} else if resp.StatusCode != http.StatusOK {
-				fmt.Printf("Error fetching book %s: HTTP status %s\n", book_id, resp.Status)
-				time.Sleep(RETRY_DELAY)
-				continue
-			}
-
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				fmt.Printf("Error reading response body for book %s: %v\n", book_id, err)
-				time.Sleep(RETRY_DELAY)
-				continue
-			}
-			if BOOK_LIMIT > book_count {
-				save_book_file(book_id, body)
-				fmt.Printf("Book %s saved successfully.\n", book_id)
-			}
-			return true
+			time.Sleep(RETRY_DELAY)
 		}
 	}
 
@@ -170,22 +145,50 @@ func fetch_and_save_books(book_id, link string) bool {
 	return false
 }
 
-func save_book_file(file_name string, content []byte) error {
-	file_path := filepath.Join(BOOKS_DIR, fmt.Sprintf("%s.txt", file_name))
-	err := ioutil.WriteFile(file_path, content, 0644)
+func handle_book_request(book_id, link string) bool {
+	time.Sleep(REQUEST_DELAY)
+	resp, err := http.Get(link)
 	if err != nil {
-		return fmt.Errorf("error writing file %s: %v", file_path, err)
+		fmt.Printf("Error fetching book %s: %v\n", book_id, err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		fmt.Printf("Book %s not found (404).\n", book_id)
+		return false
+	} else if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Error fetching book %s: HTTP status %s\n", book_id, resp.Status)
+		return false
 	}
 
-	return nil
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("Error reading response body for book %s: %v\n", book_id, err)
+		return false
+	}
+	if BOOK_LIMIT > book_count {
+		if err := save_book_file(book_id, body); err != nil {
+			fmt.Printf("Error saving book %s: %v\n", book_id, err)
+			return false
+		}
+		fmt.Printf("Book %s saved successfully.\n", book_id)
+	}
+	return true
+}
+
+func save_book_file(file_name string, content []byte) error {
+	file_path := filepath.Join(BOOKS_DIR, fmt.Sprintf("%s.txt", file_name))
+	return ioutil.WriteFile(file_path, content, 0644)
 }
 
 func main() {
+
+	create_books_dir()
+
 	indexes_links_list := get_indexes_link_list()
 	portions := divide_indexes_link_list(indexes_links_list)
 	var wg sync.WaitGroup
-
-	create_books_dir()
 
 	book_links := make(chan []string, NUM_WORKERS)
 
